@@ -43,7 +43,9 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
+#if !NETCORE
 using System.Security.Permissions;
+#endif
 using Castle.DynamicProxy;
 using Castle.DynamicProxy.Generators;
 using Moq.Properties;
@@ -58,11 +60,13 @@ namespace Moq.Proxy
 		[SuppressMessage("Microsoft.Performance", "CA1810:InitializeReferenceTypeStaticFieldsInline", Justification = "By Design")]
 		static CastleProxyFactory()
 		{
+#if !NETCORE
 #pragma warning disable 618
 			AttributesToAvoidReplicating.Add<SecurityPermissionAttribute>();
 #pragma warning restore 618
+#endif
 
-#if !SILVERLIGHT
+#if !NETCORE
 			AttributesToAvoidReplicating.Add<ReflectionPermissionAttribute>();
 			AttributesToAvoidReplicating.Add<PermissionSetAttribute>();
 			AttributesToAvoidReplicating.Add<System.Runtime.InteropServices.MarshalAsAttribute>();
@@ -77,7 +81,7 @@ namespace Moq.Proxy
 		/// <inheritdoc />
 		public object CreateProxy(Type mockType, ICallInterceptor interceptor, Type[] interfaces, object[] arguments)
 		{
-			if (mockType.IsInterface)
+			if (mockType.GetTypeInfo().IsInterface)
 			{
 				// Add type to additional interfaces and mock System.Object instead.
 				// This way it is also possible to mock System.Object methods.
@@ -112,37 +116,37 @@ namespace Moq.Proxy
 			lock (this)
 			{
 				if (!delegateInterfaceCache.TryGetValue(delegateType, out delegateInterfaceType))
-				{
+ 				{
 					var interfaceName = String.Format(CultureInfo.InvariantCulture, "DelegateInterface_{0}_{1}",
-													  delegateType.Name, delegateInterfaceSuffix++);
+					                                  delegateType.Name, delegateInterfaceSuffix++);
 
 					var moduleBuilder = generator.ProxyBuilder.ModuleScope.ObtainDynamicModule(true);
 					var newTypeBuilder = moduleBuilder.DefineType(interfaceName,
-																  TypeAttributes.Public | TypeAttributes.Interface |
-																  TypeAttributes.Abstract);
+					                                              TypeAttributes.Public | TypeAttributes.Interface |
+					                                              TypeAttributes.Abstract);
 
 					var invokeMethodOnDelegate = delegateType.GetMethod("Invoke");
 					var delegateParameterTypes = invokeMethodOnDelegate.GetParameters().Select(p => p.ParameterType).ToArray();
 
 					// Create a method on the interface with the same signature as the delegate.
 					var newMethBuilder = newTypeBuilder.DefineMethod("Invoke",
-																	 MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.Abstract,
-																	 CallingConventions.HasThis,
-																	 invokeMethodOnDelegate.ReturnType, delegateParameterTypes);
+					                                                 MethodAttributes.Public | MethodAttributes.Virtual | MethodAttributes.Abstract,
+					                                                 CallingConventions.HasThis,
+					                                                 invokeMethodOnDelegate.ReturnType, delegateParameterTypes);
 
 					foreach (var param in invokeMethodOnDelegate.GetParameters())
 					{
 						newMethBuilder.DefineParameter(param.Position + 1, param.Attributes, param.Name);
 					}
 
-					delegateInterfaceType = newTypeBuilder.CreateType();
+					delegateInterfaceType = newTypeBuilder.CreateTypeInfo().AsType();
 					delegateInterfaceCache[delegateType] = delegateInterfaceType;
-				}
-			}
+ 				}
+ 			}
 
 			delegateInterfaceMethod = delegateInterfaceType.GetMethod("Invoke");
 			return delegateInterfaceType;
-		}
+ 		}
 
 		private static ProxyGenerator CreateProxyGenerator()
 		{

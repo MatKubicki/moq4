@@ -1,8 +1,8 @@
 ﻿using System;
+#if !NETCORE
 using System.Runtime.Serialization;
-
+#endif
 using Xunit;
-
 
 namespace Moq.Tests.Regressions
 {
@@ -36,6 +36,7 @@ namespace Moq.Tests.Regressions
 			Assert.NotNull(foo.Object.Two.Three.LoopBack);
 		}
 
+#if !NETCORE
 		[Fact]
 		public void SerializableTypesNotImplementingISerializableProperlyNotMockable()
 		{
@@ -69,5 +70,7 @@ namespace Moq.Tests.Regressions
 
 			public virtual string SomeString { get; set; }
 		}
+#endif
+
 	}
 }

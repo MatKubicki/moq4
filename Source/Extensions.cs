@@ -44,12 +44,12 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+#if !NETCORE
 using System.Runtime.Serialization;
-
+#endif
 using Moq.Proxy;
 using System.Linq.Expressions;
 using Moq.Properties;
-
 
 namespace Moq
 {
@@ -57,21 +57,6 @@ namespace Moq
 	{
 		private static readonly FieldInfo remoteStackTraceString = typeof (Exception).GetField("_remoteStackTraceString",
 			BindingFlags.Instance | BindingFlags.NonPublic);
-
-		public static TAttribute GetCustomAttribute<TAttribute>(this ICustomAttributeProvider source, bool inherit)
-			where TAttribute : Attribute
-		{
-			object[] attrs = source.GetCustomAttributes(typeof (TAttribute), inherit);
-
-			if (attrs.Length == 0)
-			{
-				return default(TAttribute);
-			}
-			else
-			{
-				return (TAttribute) attrs[0];
-			}
-		}
 
 		public static string Format(this ICallContext invocation)
 		{
@@ -83,15 +68,15 @@ namespace Moq
 			if (invocation.Method.IsPropertySetter())
 			{
 				return invocation.Method.DeclaringType.Name + "." +
-				       invocation.Method.Name.Substring(4) + " = " + GetValue(invocation.Arguments.First());
+					invocation.Method.Name.Substring(4) + " = " + GetValue(invocation.Arguments.First());
 			}
-
+			
 			var genericParameters = invocation.Method.IsGenericMethod
-				                        ? "<" + string.Join(", ", invocation.Method.GetGenericArguments().Select(t => t.Name).ToArray()) + ">"
-				                        : "";
+				? "<" + string.Join(", ", invocation.Method.GetGenericArguments().Select(t => t.Name).ToArray()) + ">"
+				: "";
 
 			return invocation.Method.DeclaringType.Name + "." + invocation.Method.Name + genericParameters + "(" +
-			       string.Join(", ", invocation.Arguments.Select(a => GetValue(a)).ToArray()) + ")";
+				string.Join(", ", invocation.Arguments.Select(a => GetValue(a)).ToArray()) + ")";
 		}
 
 		public static string GetValue(object value)
@@ -106,10 +91,10 @@ namespace Moq
 			{
 				return "\"" + typedValue + "\"";
 			}
-			if (value is IEnumerable)
-			{
-				return "[" + string.Join(", ", ((IEnumerable) value).OfType<object>().Select(GetValue)) + "]";
-			}
+		    if (value is IEnumerable)
+		    {
+		        return "[" + string.Join(", ", ((IEnumerable) value).OfType<object>().Select(GetValue)) + "]";
+		    }
 			return value.ToString();
 		}
 
@@ -121,24 +106,8 @@ namespace Moq
 			}
 			catch (TargetInvocationException ex)
 			{
-#if SILVERLIGHT
-	/* The test listed below fails when we call the setValue in silverlight...
-				 * 
-				 * 
-				 * Assembly:
-				 *    Moq.Tests.Silverlight.MSTest
-				 * Namespace:
-				 *    Moq.Tests
-				 * Test class:
-				 *    MockedEventsFixture
-				 * Test method:
-				 *    ShouldPreserveStackTraceWhenRaisingEvent
-				 * at System.Reflection.RtFieldInfo.PerformVisibilityCheckOnField(IntPtr field, Object target, IntPtr declaringType, FieldAttributes attr, UInt32 invocationFlags) at System.Reflection.RtFieldInfo.InternalSetValue(Object obj, Object value, BindingFlags invokeAttr, Binder binder, CultureInfo culture, Boolean doVisibilityCheck, Boolean doCheckConsistency) at System.Reflection.RtFieldInfo.InternalSetValue(Object obj, Object value, BindingFlags invokeAttr, Binder binder, CultureInfo culture, Boolean doVisibilityCheck) at System.Reflection.RtFieldInfo.SetValue(Object obj, Object value, BindingFlags invokeAttr, Binder binder, CultureInfo culture) at System.Reflection.FieldInfo.SetValue(Object obj, Object value) at Moq.Extensions.InvokePreserveStack(Delegate del, Object[] args) at Moq.MockedEvent.DoRaise(EventArgs args) at Moq.MockedEvent`1.Raise(TEventArgs args) at Moq.Tests.MockedEventsFixture.<>c__DisplayClass16.<ShouldPreserveStackTraceWhenRaisingEvent>b__14() at Xunit.Record.Exception(ThrowsDelegate code)
-				 */
-#else
 				remoteStackTraceString.SetValue(ex.InnerException, ex.InnerException.StackTrace);
 				ex.InnerException.SetStackTrace(ex.InnerException.StackTrace);
-#endif
 				throw ex.InnerException;
 			}
 		}
@@ -153,7 +122,7 @@ namespace Moq
 		/// </summary>
 		public static bool IsDelegate(this Type t)
 		{
-			return t.IsSubclassOf(typeof (Delegate));
+			return t.GetTypeInfo().IsSubclassOf(typeof(Delegate));
 		}
 
 		public static void ThrowIfNotMockeable(this Type typeToMock)
@@ -193,7 +162,7 @@ namespace Moq
 		{
 			// A value type does not match any of these three 
 			// condition and therefore returns false.
-			return typeToMock.IsInterface || typeToMock.IsAbstract || typeToMock.IsDelegate() || (typeToMock.IsClass && !typeToMock.IsSealed);
+			return typeToMock.GetTypeInfo().IsInterface || typeToMock.GetTypeInfo().IsAbstract || typeToMock.IsDelegate() || (typeToMock.GetTypeInfo().IsClass && !typeToMock.GetTypeInfo().IsSealed);
 		}
 
 		public static bool IsSerializableMockable(this Type typeToMock)
@@ -203,17 +172,25 @@ namespace Moq
 
 		private static bool IsGetObjectDataVirtual(this Type typeToMock)
 		{
+#if NETCORE
+			return false;
+#else
 			var getObjectDataMethod = typeToMock.GetInterfaceMap(typeof (ISerializable)).TargetMethods[0];
 			return !getObjectDataMethod.IsPrivate && getObjectDataMethod.IsVirtual && !getObjectDataMethod.IsFinal;
+#endif
 		}
 
 		private static bool ContainsDeserializationConstructor(this Type typeToMock)
 		{
+#if NETCORE
+			return false;
+#else
 			return typeToMock.GetConstructor(
 				BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
 				null,
 				new[] {typeof (SerializationInfo), typeof (StreamingContext)},
 				null) != null;
+#endif
 		}
 
 		public static bool CanOverride(this MethodBase method)
@@ -275,9 +252,46 @@ namespace Moq
 			return ev;
 		}
 
+#if !NETCORE
+		public static TAttribute GetCustomAttribute<TAttribute>(this ICustomAttributeProvider source, bool inherit)
+			where TAttribute : Attribute
+		{
+			object[] attrs = source.GetCustomAttributes(typeof(TAttribute), inherit);
+
+			if (attrs.Length == 0)
+			{
+				return default(TAttribute);
+			}
+			else
+			{
+				return (TAttribute)attrs[0];
+			}
+		}
+#endif
+
+		public static bool HasMatchingParameterTypes(this MethodInfo method, Type[] paramTypes)
+		{
+			var types = method.GetParameterTypes().ToArray();
+			if (types.Length != paramTypes.Length)
+			{
+				return false;
+			}
+
+			for (int i = 0; i < types.Length; i++)
+			{
+				if (types[i] != paramTypes[i])
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
 		public static bool HasCompatibleParameterList(this Delegate function, ParameterInfo[] expectedParams)
 		{
-			if (HasCompatibleParameterList(expectedParams, function.Method))
+			var method = function.GetMethodInfo();
+			if (HasCompatibleParameterList(expectedParams, method))
 			{
 				// the backing method for the literal delegate is compatible, DynamicInvoke(...) will succeed
 				return true;
